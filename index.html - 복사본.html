@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>클래식 테트리스 에볼루션</title>
+    <style>
+        body {
+            background-color: #121214;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 0 0 15px 0;
+            font-size: 32px;
+            letter-spacing: 4px;
+            color: #00f0ff;
+            text-shadow: 0 0 15px rgba(0, 240, 255, 0.6);
+        }
+
+        #game-container {
+            display: flex;
+            gap: 25px;
+            background: #1e1e24;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+            border: 1px solid #2d2d35;
+        }
+
+        /* 메인 게임 캔버스 */
+        .canvas-board {
+            border: 3px solid #3e3e4a;
+            background-color: #0c0c0e;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.9);
+            border-radius: 8px;
+        }
+
+        /* 사이드 패널 레이아웃 */
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 120px;
+        }
+
+        .info-box {
+            background: #0c0c0e;
+            border: 2px solid #2d2d35;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .info-title {
+            font-size: 11px;
+            color: #6c6c7d;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .info-value {
+            font-size: 20px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #00f0ff;
+        }
+
+        /* 서브 캠버스 (Hold, Next) */
+        .sub-canvas {
+            background: #0c0c0e;
+            border: 1px solid #2d2d35;
+            border-radius: 4px;
+            margin-top: 5px;
+        }
+
+        .btn-start {
+            padding: 12px;
+            background: linear-gradient(135deg, #00f0ff, #0077ff);
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 119, 255, 0.4);
+            transition: all 0.2s;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(0, 240, 255, 0.6);
+        }
+
+        #controls-guide {
+            margin-top: 20px;
+            font-size: 13px;
+            color: #6c6c7d;
+            text-align: center;
+            line-height: 1.6;
+            background: rgba(255,255,255,0.03);
+            padding: 10px 20px;
+            border-radius: 20px;
+        }
+        
+        .key {
+            background: #2d2d35;
+            color: #fff;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>TETRIS EVOLUTION</h1>
+
+    <div id="game-container">
+        <div class="side-panel">
+            <div class="info-box">
+                <div class="info-title">HOLD</div>
+                <canvas id="hold-canvas" class="sub-canvas" width="90" height="90"></canvas>
+            </div>
+            <div class="info-box">
+                <div class="info-title">LEVEL</div>
+                <div id="game-level" class="info-value">1</div>
+            </div>
+        </div>
+
+        <canvas id="game-canvas" class="canvas-board" width="240" height="480"></canvas>
+
+        <div class="side-panel">
+            <div class="info-box">
+                <div class="info-title">NEXT</div>
+                <canvas id="next-canvas" class="sub-canvas" width="90" height="90"></canvas>
+            </div>
+            <div class="info-box">
+                <div class="info-title">SCORE</div>
+                <div id="game-score" class="info-value">0</div>
+            </div>
+            <button class="btn-start" id="start-btn" onclick="pressStart()">START</button>
+        </div>
+    </div>
+
+    <div id="controls-guide">
+        <span class="key">←</span> <span class="key">→</span> : 이동 | <span class="key">↑</span> : 회전 | <span class="key">↓</span> : 소프트 드롭<br>
+        <span class="key">Spacebar</span> : 하드 드롭 | <span class="key">C</span> 또는 <span class="key">Shift</span> : 블록 교체(HOLD)
+    </div>
+
+    <audio id="bgm" loop src="https://archive.org/download/tetris-theme-remix/Tetris%20Theme%20Remix.mp3"></audio>
+
+<script>
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+    const holdCanvas = document.getElementById('hold-canvas');
+    const hctx = holdCanvas.getContext('2d');
+    const nextCanvas = document.getElementById('next-canvas');
+    const nctx = nextCanvas.getContext('2d');
+    const bgm = document.getElementById('bgm');
+
+    const COLS = 10, ROWS = 20, BLOCK_SIZE = 24;
+    
+    // 네온 스타일 테트리스 블록 고유 색상셋
+    const COLORS = [
+        null,
+        '#00f0ff', // I (시안)
+        '#ffb700', // L (오렌지)
+        '#0044ff', // J (블루)
+        '#ffdd00', // O (옐로우)
+        '#ff0055', // Z (레드)
+        '#00ff66', // S (그린)
+        '#9900ff'  // T (퍼플)
+    ];
+    
+    const PIECES = 'ILJOTSZ';
+
+    let board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+    let score = 0, level = 1, lines = 0;
+    let pos = {x: 0, y: 0}, matrix = null;
+    let nextMatrix = createPiece(PIECES[Math.floor(Math.random() * 7)]);
+    let holdMatrix = null, canHold = true;
+    let dropCounter = 0, dropInterval = 800; // 초기 낙하 속도 (0.8초)
+    let lastTime = 0;
+    let isPlaying = false;
+
+    // 블록 7종 형태 정의 정의 (컬러 인덱스 매핑)
+    function createPiece(type) {
+        if (type === 'I') return [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]];
+        if (type === 'L') return [[0,2,0],[0,2,0],[0,2,2]];
+        if (type === 'J') return [[0,3,0],[0,3,0],[3,3,0]];
+        if (type === 'O') return [[4,4],[4,4]];
+        if (type === 'Z') return [[5,5,0],[0,5,5],[0,0,0]];
+        if (type === 'S') return [[0,6,6],[6,6,0],[0,0,0]];
+        if (type === 'T') return [[0,7,0],[7,7,7],[0,0,0]];
+    }
+
+    // 화면 그리기를 통합 제어하는 메인 렌더러
+    function draw() {
+        ctx.fillStyle = '#0c0c0e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 1. 이미 쌓여 고정된 블록 그리기
+        board.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) {
+                    drawBlock(ctx, x, y, COLORS[value]);
+                }
+            });
+        });
+
+        if (!matrix) return;
+
+        // 2. 고스트 피스(Ghost Piece) 가이드라인 위치 미리 계산
+        let ghostY = pos.y;
+        while (!checkCollision(board, {pos: {x: pos.x, y: ghostY}, matrix})) {
+            ghostY++;
+        }
+        ghostY--; // 충돌 직전 위치 판정
+
+        // 3. 고스트 피스 그리기 (반투명 서선 연출)
+        matrix.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+                    ctx.fillRect((x + pos.x) * BLOCK_SIZE, (y + ghostY) * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                    ctx.strokeRect((x + pos.x) * BLOCK_SIZE, (y + ghostY) * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+                }
+            });
+        });
+
+        // 4. 현재 조작중인 활성 블록 그리기
+        matrix.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) {
+                    drawBlock(ctx, x + pos.x, y + pos.y, COLORS[value]);
+                }
+            });
+        });
+
+        // 5. 서브 패널 UI 동기화 (Hold, Next)
+        hctx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+        if (holdMatrix) drawSubPreview(hctx, holdMatrix);
+
+        nctx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+        drawSubPreview(nctx, nextMatrix);
+    }
+
+    // 입체감 있는 모던 블록 드로잉 기술
+    function drawBlock(context, x, y, color) {
+        context.fillStyle = color;
+        context.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+        // 하이라이트 탑 엣지 효과
+        context.fillStyle = 'rgba(255,255,255,0.2)';
+        context.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, 3);
+    }
+
+    // 미니 홀드/넥스트 창 맞춤형 정렬 배치 함수
+    function drawSubPreview(context, mat) {
+        const size = 18; // 미니 블록 사이즈
+        const offsetX = (context.canvas.width - mat[0].length * size) / 2;
+        const offsetY = (context.canvas.height - mat.length * size) / 2;
+        mat.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) {
+                    context.fillStyle = COLORS[value];
+                    context.fillRect(offsetX + x * size, offsetY + y * size, size - 1, size - 1);
+                }
+            });
+        });
+    }
+
+    // 고정밀 격자 충돌 감지
+    function checkCollision(b, p) {
+        const [m, o] = [p.matrix, p.pos];
+        for (let y = 0; y < m.length; ++y) {
+            for (let x = 0; x < m[y].length; ++x) {
+                if (m[y][x] !== 0 && (b[y + o.y] && b[y + o.y][x + o.x]) !== 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 블록 한 단계씩 떨어뜨리기
+    function playerDrop() {
+        if (!isPlaying) return;
+        pos.y++;
+        if (checkCollision(board, {pos, matrix})) {
+            pos.y--;
+            merge();
+            playerReset();
+            lineClearSweep();
+            updateScoreText();
+        }
+        dropCounter = 0;
+    }
+
+    // 조작하던 블록 바닥 격자에 고정
+    function merge() {
+        matrix.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) board[y + pos.y][x + pos.x] = value;
+            });
+        });
+    }
+
+    // 가득 찬 라인 탐색 및 삭제 (레벨/속도 조절 연동)
+    function lineClearSweep() {
+        let rowCount = 0;
+        outer: for (let y = board.length - 1; y > 0; --y) {
+            for (let x = 0; x < board[y].length; ++x) {
+                if (board[y][x] === 0) continue outer;
+            }
+            // 라인 완전 삭제 및 상단 신규 빈 줄 할당
+            const row = board.splice(y, 1)[0].fill(0);
+            board.unshift(row);
+            ++y;
+            rowCount++;
+        }
+        
+        if (rowCount > 0) {
+            // 오리지널 NES 방식 보너스 스코어 공식 적용
+            const rewardMap = [0, 40, 100, 300, 1200];
+            score += rewardMap[rowCount] * level;
+            lines += rowCount;
+            
+            // 10줄 삭제 시마다 레벨 업 및 속도 가속 연산
+            if (lines >= level * 10) {
+                level++;
+                dropInterval = Math.max(80, 800 - (level - 1) * 80); // 레벨 상승에 따라 속도 업
+            }
+        }
+    }
+
+    // 다음 대기중인 블록 스폰 및 게임오버 검사
+    function playerReset() {
+        matrix = nextMatrix;
+        nextMatrix = createPiece(PIECES[Math.floor(Math.random() * 7)]);
+        pos.y = 0;
+        pos.x = Math.floor(COLS / 2) - Math.floor(matrix[0].length / 2);
+        canHold = true;
+
+        // 스폰 하자마자 겹치면 최종 게임 오버
+        if (checkCollision(board, {pos, matrix})) {
+            isPlaying = false;
+            bgm.pause();
+            alert(`GAME OVER\n최종 점수: ${score}점`);
+            document.getElementById('start-btn').style.display = 'block';
+        }
+    }
+
+    // 2D 배열 수학 행렬 회전 로직
+    function rotateMatrix(mat) {
+        for (let y = 0; y < mat.length; ++y) {
+            for (let x = 0; x < y; ++x) {
+                [mat[x][y], mat[y][x]] = [mat[y][x], mat[x][y]];
+            }
+        }
+        mat.forEach(row => row.reverse());
+    }
+
+    // 전략적 보관 기능 (Hold) 구현
+    function playerHold() {
+        if (!canHold || !isPlaying) return;
+        if (!holdMatrix) {
+            holdMatrix = createPiece(PIECES[COLORS.indexOf(COLORS.find(c => c === COLORS[matrix.find(r => r.some(v => v > 0)).find(v => v > 0)]))]); 
+            // 현재 타입 역추적 후 저장
+            const currentType = PIECES[COLORS.indexOf(COLORS[matrix.find(r => r.some(v => v > 0)).find(v => v > 0)]) - 1];
+            holdMatrix = createPiece(currentType);
+            playerReset();
+        } else {
+            const currentType = PIECES[COLORS.indexOf(COLORS[matrix.find(r => r.some(v => v > 0)).find(v => v > 0)]) - 1];
+            const temp = holdMatrix;
+            holdMatrix = createPiece(currentType);
+            matrix = temp;
+            pos.y = 0;
+            pos.x = Math.floor(COLS / 2) - Math.floor(matrix[0].length / 2);
+        }
+        canHold = false;
+        draw();
+    }
+
+    function updateScoreText() {
+        document.getElementById('game-score').innerText = score;
+        document.getElementById('game-level').innerText = level;
+    }
+
+    // 메인 게임 애니메이션 타임 루프 프레임 익스프레스
+    function tick(time = 0) {
+        if (!isPlaying) return;
+        const deltaTime = time - lastTime;
+        lastTime = time;
+
+        dropCounter += deltaTime;
+        if (dropCounter > dropInterval) {
+            playerDrop();
+        }
+
+        draw();
+        requestAnimationFrame(tick);
+    }
+
+    // 키보드 방향키 조작 시스템 바인딩
+    document.addEventListener('keydown', event => {
+        if (!isPlaying) return;
+
+        if (event.key === 'ArrowLeft') {
+            pos.x--;
+            if (checkCollision(board, {pos, matrix})) pos.x++;
+        } else if (event.key === 'ArrowRight') {
+            pos.x++;
+            if (checkCollision(board, {pos, matrix})) pos.x--;
+        } else if (event.key === 'ArrowDown') {
+            playerDrop();
+        } else if (event.key === 'ArrowUp') {
+            rotateMatrix(matrix);
+            if (checkCollision(board, {pos, matrix})) rotateMatrix(matrix); // 벽치기 방지 복구
+        } else if (event.key === ' ') { // 스페이스바: 하드드롭
+            event.preventDefault();
+            while (!checkCollision(board, {pos, matrix})) {
+                pos.y++;
+            }
+            pos.y--;
+            merge();
+            playerReset();
+            lineClearSweep();
+            updateScoreText();
+        } else if (event.key === 'c' || event.key === 'C' || event.key === 'Shift') {
+            playerHold();
+        }
+        draw();
+    });
+
+    // 게임 시작 및 리셋 버튼 제어
+    function pressStart() {
+        board.forEach(row => row.fill(0));
+        score = 0; level = 1; lines = 0;
+        holdMatrix = null;
+        isPlaying = true;
+        updateScoreText();
+        playerReset();
+        
+        // 배경 음악 무한 루프 재생 시작
+        bgm.currentTime = 0;
+        bgm.play().catch(e => console.log("오디오 재생은 유저 상호작용이 필요합니다."));
+        
+        document.getElementById('start-btn').style.display = 'none';
+        lastTime = performance.now();
+        tick();
+    }
+</script>
+
+</body>
+</html>
